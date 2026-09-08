@@ -1,0 +1,20 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build application and installer
+        shell: powershell
+        run: .\scripts\build.ps1
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ParsecAzertyFix
+          path: artifacts/*

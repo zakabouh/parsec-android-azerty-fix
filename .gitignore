@@ -1,0 +1,5 @@
+artifacts/
+*.user
+*.suo
+*.log
+.vs/
