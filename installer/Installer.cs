@@ -9,7 +9,7 @@ using Microsoft.Win32;
 internal static class Installer
 {
     private const string ProductName = "Parsec Android AZERTY Fix";
-    private const string Version = "1.0.0";
+    private const string Version = "1.1.0";
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\ParsecAzertyFix";
     private const string RunValueName = "ParsecAzertyFix";

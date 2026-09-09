@@ -55,15 +55,20 @@ internal sealed class FixContext : ApplicationContext
     private readonly string _statusLog;
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _statusItem;
+    private readonly ToolStripMenuItem _sessionItem;
     private readonly ToolStripMenuItem _enabledItem;
     private readonly System.Windows.Forms.Timer _connectionTimer;
     private readonly LowLevelKeyboardProc _callback;
     private IntPtr _hook;
     private bool _enabled = true;
     private bool _parsecConnected;
+    private bool _sessionAndroidMode;
     private bool _remoteShift;
+    private bool _remoteControl;
+    private bool _remoteAlt;
     private bool _composeArmed;
     private uint _composeConsumedScan;
+    private uint _toggleConsumedScan;
     private DateTime _composeArmedAt;
 
     public FixContext()
@@ -80,7 +85,18 @@ internal sealed class FixContext : ApplicationContext
 
         _statusItem = new ToolStripMenuItem("État : démarrage…");
         _statusItem.Enabled = false;
-        _enabledItem = new ToolStripMenuItem("Correction activée");
+        _sessionItem = new ToolStripMenuItem("Mode Android pour cette session (Ctrl+Alt+A)");
+        _sessionItem.Checked = false;
+        _sessionItem.CheckOnClick = true;
+        _sessionItem.CheckedChanged += delegate
+        {
+            _sessionAndroidMode = _sessionItem.Checked;
+            ResetTransientInputState();
+            UpdateTray();
+            WriteStatus("Mode de session " + (_sessionAndroidMode ? "Android" : "standard"));
+        };
+
+        _enabledItem = new ToolStripMenuItem("Correcteur activé (interrupteur général)");
         _enabledItem.Checked = true;
         _enabledItem.CheckOnClick = true;
         _enabledItem.CheckedChanged += delegate
@@ -94,6 +110,7 @@ internal sealed class FixContext : ApplicationContext
         exitItem.Click += delegate { ExitThread(); };
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
+        menu.Items.Add(_sessionItem);
         menu.Items.Add(_enabledItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
@@ -154,9 +171,9 @@ internal sealed class FixContext : ApplicationContext
         if (connected != _parsecConnected)
         {
             _parsecConnected = connected;
-            _remoteShift = false;
-            _composeArmed = false;
-            _composeConsumedScan = 0;
+            _sessionItem.Checked = false;
+            _sessionAndroidMode = false;
+            ResetTransientInputState();
             WriteStatus("Session Parsec " + (connected ? "détectée" : "terminée"));
         }
         UpdateTray();
@@ -195,13 +212,25 @@ internal sealed class FixContext : ApplicationContext
         string state;
         if (!_enabled)
             state = "désactivé";
-        else if (_parsecConnected)
-            state = "actif — session Parsec";
-        else
+        else if (!_parsecConnected)
             state = "en attente de Parsec";
+        else if (_sessionAndroidMode)
+            state = "mode Android actif";
+        else
+            state = "mode standard — aucune correction";
 
         _statusItem.Text = "État : " + state;
         _tray.Text = "Parsec AZERTY Fix — " + state;
+    }
+
+    private void ResetTransientInputState()
+    {
+        _remoteShift = false;
+        _remoteControl = false;
+        _remoteAlt = false;
+        _composeArmed = false;
+        _composeConsumedScan = 0;
+        _toggleConsumedScan = 0;
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -227,12 +256,46 @@ internal sealed class FixContext : ApplicationContext
             return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
 
-        bool noShortcutModifier = !ModifierDown(VK_CONTROL) && !ModifierDown(VK_MENU) &&
+        if (data.vkCode == 0x11 || data.vkCode == 0xA2 || data.vkCode == 0xA3)
+        {
+            _remoteControl = down;
+            return CallNextHookEx(_hook, nCode, wParam, lParam);
+        }
+
+        if (data.vkCode == 0x12 || data.vkCode == 0xA4 || data.vkCode == 0xA5)
+        {
+            _remoteAlt = down;
+            return CallNextHookEx(_hook, nCode, wParam, lParam);
+        }
+
+        bool controlDown = _remoteControl || ModifierDown(VK_CONTROL);
+        bool altDown = _remoteAlt || ModifierDown(VK_MENU);
+        bool noShortcutModifier = !controlDown && !altDown &&
                                   !ModifierDown(VK_LWIN) && !ModifierDown(VK_RWIN);
         bool sourceShift = _remoteShift || ModifierDown(VK_SHIFT);
         char sourceCharacter;
         bool hasSourceCharacter = TryGetUsSourceCharacter(
             data.vkCode, data.scanCode, sourceShift, out sourceCharacter);
+
+        if (up && _toggleConsumedScan == data.scanCode)
+        {
+            _toggleConsumedScan = 0;
+            return new IntPtr(1);
+        }
+
+        bool androidToggle = hasSourceCharacter &&
+                             Char.ToLowerInvariant(sourceCharacter) == 'a';
+        bool universalToggle = data.vkCode == 0x7B; // F12
+        if (down && controlDown && altDown &&
+            (androidToggle || universalToggle))
+        {
+            _sessionItem.Checked = !_sessionItem.Checked;
+            _toggleConsumedScan = data.scanCode;
+            return new IntPtr(1);
+        }
+
+        if (!_sessionAndroidMode)
+            return CallNextHookEx(_hook, nCode, wParam, lParam);
 
         if (up && _composeConsumedScan == data.scanCode)
         {

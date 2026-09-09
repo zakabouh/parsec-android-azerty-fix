@@ -4,7 +4,7 @@
 
 An open-source Windows workaround for **Parsec Android keyboard layout problems** when an **AZERTY keyboard is recognized as QWERTY** on the remote Windows host.
 
-It fixes swapped `A/Q`, `Z/W` and `M` keys, number-row and punctuation mapping, and provides fallbacks for special characters, Backspace and Delete. It works with the Android on-screen keyboard and with many Samsung Galaxy Tab, Samsung DeX, Gboard, Bluetooth and USB keyboard setups.
+It fixes swapped `A/Q`, `Z/W` and `M` keys, number-row and punctuation mapping, and provides fallbacks for special characters, Backspace and Delete. A safe per-session switch prevents the remapping from affecting normal Parsec connections made from another computer.
 
 ## Does this match your problem?
 
@@ -44,6 +44,7 @@ Some Android keyboards send Backspace inconsistently through Parsec. The helper 
 - It cannot reconstruct a key for which Android and Parsec transmit absolutely no event; the compose shortcuts are the fallback for those characters.
 - Enter, mouse/right-click and controller problems are outside this keyboard-layout fix.
 - Double typing caused by some SwiftKey configurations is a separate Android keyboard issue.
+- If Android and another computer control the host simultaneously, Parsec does not expose enough client metadata to apply different mappings to each keyboard event.
 
 ## What it fixes
 
@@ -51,7 +52,7 @@ Some Android keyboards send Backspace inconsistently through Parsec. The helper 
 - Converts the US number row and punctuation to the intended characters instead of letting the French host layout reinterpret them.
 - Provides a compose-key fallback for Unicode symbols that Parsec Android does not transmit as usable Windows key events.
 - Provides optional compose shortcuts for Backspace and Delete.
-- Only processes injected keyboard events while a Parsec session is detected.
+- Only remaps injected keyboard events after Android mode has been enabled for the current Parsec session.
 - Leaves the physical Windows keyboard and local mouse unchanged.
 
 Parsec officially describes its Android app as experimental and says mouse and keyboard input may work incorrectly in some cases. See [Install Parsec App on Android](https://support.parsec.app/hc/en-us/articles/32381582866452-Install-Parsec-App-on-Android).
@@ -60,7 +61,8 @@ Parsec officially describes its Android app as experimental and says mouse and k
 
 1. Download [`ParsecAzertyFix-Setup.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-Setup.exe).
 2. Run the installer.
-3. Reconnect to the Windows host with Parsec Android.
+3. Connect to the Windows host with Parsec Android.
+4. Enable **Android mode for this session** from the tray icon, or press `Ctrl+Alt+A` from the Android client.
 
 No administrator rights are required. The application is installed for the current Windows user at:
 
@@ -74,7 +76,11 @@ It is registered under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, so 
 
 ## Usage
 
-The tray icon reports whether the fix is waiting for Parsec or active during a session. Its menu can temporarily disable the correction or exit the program.
+Every new Parsec connection starts in **Standard mode — no correction**. This keeps the keyboard unchanged when the same host is controlled from another Windows, macOS or Linux computer.
+
+When connecting from Android, enable **Android mode for this session** from the tray icon or press `Ctrl+Alt+A`. The mode automatically returns to Standard when the Parsec session disconnects. `Ctrl+Alt+F12` is an alternative toggle for clients that provide function keys.
+
+The tray icon reports the current mode. Its menu can also disable the helper globally or exit the program.
 
 ### Compose shortcuts for missing characters
 
