@@ -4,7 +4,7 @@
 
 Correcteur Windows open source pour le problème de **clavier Parsec Android reconnu en QWERTY alors qu'il est en AZERTY** sur le PC distant.
 
-Il corrige les touches `A/Q`, `Z/W` et `M` inversées, les chiffres qui produisent des symboles, la ponctuation et plusieurs caractères spéciaux. Un interrupteur sécurisé par session empêche désormais ce remappage d'affecter les connexions Parsec normales provenant d'un autre ordinateur.
+Il corrige les touches `A/Q`, `Z/W` et `M` inversées, les chiffres qui produisent des symboles, la ponctuation et plusieurs caractères spéciaux. Le programme apprend une seule fois le port client stable de l'appareil Android, puis active automatiquement la correction uniquement pour cet appareil. Les connexions Parsec provenant d'un autre ordinateur restent inchangées.
 
 ## Est-ce le même problème que le vôtre ?
 
@@ -53,7 +53,7 @@ Certains claviers Android transmettent Retour arrière de façon irrégulière d
 - Conversion de la rangée des chiffres et de la ponctuation US avant leur mauvaise interprétation par la disposition française de Windows.
 - Touche de composition pour les symboles Unicode que Parsec Android ne transmet pas comme événements Windows exploitables.
 - Raccourcis de secours facultatifs pour Retour arrière et Supprimer.
-- Remappage limité aux événements injectés après l'activation du mode Android pour la session Parsec courante.
+- Remappage limité aux événements injectés lorsque le client connecté correspond à un appareil Android déjà appris.
 - Aucun changement du vrai clavier Windows ni de la souris locale.
 
 Parsec présente officiellement son application Android comme expérimentale et indique que les entrées clavier et souris peuvent parfois mal fonctionner. Voir [Installer l'application Parsec sur Android](https://support.parsec.app/hc/en-us/articles/32381582866452-Install-Parsec-App-on-Android).
@@ -62,8 +62,8 @@ Parsec présente officiellement son application Android comme expérimentale et 
 
 1. Téléchargez [`ParsecAzertyFix-Setup.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-Setup.exe).
 2. Lancez l'installateur.
-3. Connectez-vous au PC avec Parsec Android.
-4. Activez **Mode Android pour cette session** depuis l'icône de notification, ou appuyez sur `Ctrl+Alt+A` depuis Android.
+3. Connectez uniquement l'appareil Android au PC Windows.
+4. Ouvrez l'icône de notification et choisissez une fois **Reconnaître cette connexion comme Android**.
 
 L'installation ne demande aucun droit administrateur. Elle est effectuée pour l'utilisateur Windows courant dans :
 
@@ -77,11 +77,15 @@ Le programme est ajouté à `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
 
 ## Utilisation
 
-Chaque nouvelle connexion Parsec commence en **Mode standard — aucune correction**. Le clavier reste donc inchangé lorsque le même PC hôte est contrôlé depuis un autre ordinateur Windows, macOS ou Linux.
+Après cette identification unique, le fonctionnement devient automatique :
 
-Depuis Android, activez **Mode Android pour cette session** dans l'icône de notification ou appuyez sur `Ctrl+Alt+A`. Le programme revient automatiquement au mode standard quand la session Parsec se déconnecte. `Ctrl+Alt+F12` constitue un autre raccourci pour les clients disposant de touches de fonction.
+- l'appareil Android appris se connecte : la correction s'active ;
+- Android se déconnecte : la correction s'arrête ;
+- un autre ordinateur Windows, macOS ou Linux se connecte : aucun remappage n'est appliqué.
 
-L'icône indique le mode courant. Son menu permet également de désactiver complètement le correcteur ou de quitter le programme.
+Aucun raccourci clavier ni combinaison dépendant de la disposition n'est nécessaire. Le menu permet aussi d'apprendre une autre connexion Android, d'oublier les appareils enregistrés, de désactiver complètement le correcteur ou de quitter le programme.
+
+L'identification utilise le port client inscrit par Parsec dans le journal de l'hôte. Ce port reste normalement stable pour une installation de Parsec. Si l'application est réinstallée sur Android ou si sa configuration réseau change, choisissez de nouveau **Reconnaître cette connexion comme Android**.
 
 ### Raccourcis de composition pour les caractères absents
 
@@ -123,7 +127,8 @@ Le dossier `artifacts\` contiendra :
 ## Confidentialité et sécurité
 
 - Utilise le hook clavier bas niveau de Windows (`WH_KEYBOARD_LL`) et des appels locaux à `SendInput`.
-- Lit `%APPDATA%\Parsec\log.txt` uniquement pour déterminer si une session Parsec est connectée.
+- Lit `%APPDATA%\Parsec\log.txt` uniquement pour détecter les connexions et leurs ports clients.
+- Enregistre seulement les numéros de ports appris dans `%LOCALAPPDATA%\ParsecAzertyFix\android-clients.txt`.
 - N'effectue aucune connexion réseau et ne contient ni télémétrie ni collecte de données.
 - Ne demande aucun droit administrateur.
 

@@ -4,7 +4,7 @@
 
 An open-source Windows workaround for **Parsec Android keyboard layout problems** when an **AZERTY keyboard is recognized as QWERTY** on the remote Windows host.
 
-It fixes swapped `A/Q`, `Z/W` and `M` keys, number-row and punctuation mapping, and provides fallbacks for special characters, Backspace and Delete. A safe per-session switch prevents the remapping from affecting normal Parsec connections made from another computer.
+It fixes swapped `A/Q`, `Z/W` and `M` keys, number-row and punctuation mapping, and provides fallbacks for special characters, Backspace and Delete. The helper learns the stable client port of an Android device once, then automatically enables the correction only for that device. Normal Parsec connections from another computer stay unchanged.
 
 ## Does this match your problem?
 
@@ -52,7 +52,7 @@ Some Android keyboards send Backspace inconsistently through Parsec. The helper 
 - Converts the US number row and punctuation to the intended characters instead of letting the French host layout reinterpret them.
 - Provides a compose-key fallback for Unicode symbols that Parsec Android does not transmit as usable Windows key events.
 - Provides optional compose shortcuts for Backspace and Delete.
-- Only remaps injected keyboard events after Android mode has been enabled for the current Parsec session.
+- Only remaps injected keyboard events when the connected client matches a previously learned Android device.
 - Leaves the physical Windows keyboard and local mouse unchanged.
 
 Parsec officially describes its Android app as experimental and says mouse and keyboard input may work incorrectly in some cases. See [Install Parsec App on Android](https://support.parsec.app/hc/en-us/articles/32381582866452-Install-Parsec-App-on-Android).
@@ -61,8 +61,8 @@ Parsec officially describes its Android app as experimental and says mouse and k
 
 1. Download [`ParsecAzertyFix-Setup.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-Setup.exe).
 2. Run the installer.
-3. Connect to the Windows host with Parsec Android.
-4. Enable **Android mode for this session** from the tray icon, or press `Ctrl+Alt+A` from the Android client.
+3. Connect to the Windows host with the Android device only.
+4. Open the tray icon and select **Recognize this connection as Android** once.
 
 No administrator rights are required. The application is installed for the current Windows user at:
 
@@ -76,11 +76,15 @@ It is registered under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, so 
 
 ## Usage
 
-Every new Parsec connection starts in **Standard mode — no correction**. This keeps the keyboard unchanged when the same host is controlled from another Windows, macOS or Linux computer.
+After the one-time learning step, operation is automatic:
 
-When connecting from Android, enable **Android mode for this session** from the tray icon or press `Ctrl+Alt+A`. The mode automatically returns to Standard when the Parsec session disconnects. `Ctrl+Alt+F12` is an alternative toggle for clients that provide function keys.
+- the learned Android device connects: correction turns on;
+- Android disconnects: correction turns off;
+- another Windows, macOS or Linux computer connects: no correction is applied.
 
-The tray icon reports the current mode. Its menu can also disable the helper globally or exit the program.
+No keyboard shortcut or layout-dependent key combination is required. The tray menu can learn another Android connection, forget saved Android devices, disable the helper globally or exit the program.
+
+The identification uses the Parsec client port found in the host log. This port is normally stable for one Parsec installation. If Parsec is reinstalled on Android or its network configuration changes, use **Recognize this connection as Android** again.
 
 ### Compose shortcuts for missing characters
 
@@ -122,7 +126,8 @@ The `artifacts\` directory will contain:
 ## Privacy and security
 
 - Uses the Windows low-level keyboard hook (`WH_KEYBOARD_LL`) and local `SendInput` calls.
-- Reads `%APPDATA%\Parsec\log.txt` only to determine whether a Parsec session is connected.
+- Reads `%APPDATA%\Parsec\log.txt` only to detect connections and their client ports.
+- Stores only the learned port numbers in `%LOCALAPPDATA%\ParsecAzertyFix\android-clients.txt`.
 - Makes no network connections and contains no telemetry or data collection.
 - Does not require administrator privileges.
 

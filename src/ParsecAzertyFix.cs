@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -50,25 +51,35 @@ internal sealed class FixContext : ApplicationContext
     private static readonly Regex DisconnectedLine = new Regex(
         @"^\[I [^\]]+\] .+ disconnected\.$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex NetworkLine = new Regex(
+        @"^\[D [^\]]+\] net\s*=\s*[^|]+\|.*\|(?<port>\d+)\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ParsecRestartLine = new Regex(
+        @"^\[D [^\]]+\] log: Parsec release",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly string _parsecLog;
     private readonly string _statusLog;
+    private readonly string _androidClientsFile;
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _statusItem;
-    private readonly ToolStripMenuItem _sessionItem;
+    private readonly ToolStripMenuItem _learnCurrentItem;
+    private readonly ToolStripMenuItem _forgetClientsItem;
     private readonly ToolStripMenuItem _enabledItem;
     private readonly System.Windows.Forms.Timer _connectionTimer;
     private readonly LowLevelKeyboardProc _callback;
+    private readonly HashSet<int> _androidClientPorts = new HashSet<int>();
     private IntPtr _hook;
     private bool _enabled = true;
     private bool _parsecConnected;
     private bool _sessionAndroidMode;
+    private string _connectionSignature = String.Empty;
+    private ParsecConnectionSnapshot _connectionSnapshot = new ParsecConnectionSnapshot();
     private bool _remoteShift;
     private bool _remoteControl;
     private bool _remoteAlt;
     private bool _composeArmed;
     private uint _composeConsumedScan;
-    private uint _toggleConsumedScan;
     private DateTime _composeArmedAt;
 
     public FixContext()
@@ -78,6 +89,8 @@ internal sealed class FixContext : ApplicationContext
             "ParsecAzertyFix");
         Directory.CreateDirectory(localDir);
         _statusLog = Path.Combine(localDir, "status.log");
+        _androidClientsFile = Path.Combine(localDir, "android-clients.txt");
+        LoadAndroidClientPorts();
         _parsecLog = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Parsec",
@@ -85,16 +98,10 @@ internal sealed class FixContext : ApplicationContext
 
         _statusItem = new ToolStripMenuItem("État : démarrage…");
         _statusItem.Enabled = false;
-        _sessionItem = new ToolStripMenuItem("Mode Android pour cette session (Ctrl+Alt+A)");
-        _sessionItem.Checked = false;
-        _sessionItem.CheckOnClick = true;
-        _sessionItem.CheckedChanged += delegate
-        {
-            _sessionAndroidMode = _sessionItem.Checked;
-            ResetTransientInputState();
-            UpdateTray();
-            WriteStatus("Mode de session " + (_sessionAndroidMode ? "Android" : "standard"));
-        };
+        _learnCurrentItem = new ToolStripMenuItem("Reconnaître cette connexion comme Android");
+        _learnCurrentItem.Click += delegate { LearnCurrentConnection(); };
+        _forgetClientsItem = new ToolStripMenuItem("Oublier les appareils Android enregistrés");
+        _forgetClientsItem.Click += delegate { ForgetAndroidClients(); };
 
         _enabledItem = new ToolStripMenuItem("Correcteur activé (interrupteur général)");
         _enabledItem.Checked = true;
@@ -110,7 +117,8 @@ internal sealed class FixContext : ApplicationContext
         exitItem.Click += delegate { ExitThread(); };
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
-        menu.Items.Add(_sessionItem);
+        menu.Items.Add(_learnCurrentItem);
+        menu.Items.Add(_forgetClientsItem);
         menu.Items.Add(_enabledItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
@@ -167,43 +175,150 @@ internal sealed class FixContext : ApplicationContext
             SendUnicode('`');
         }
 
-        bool connected = ReadParsecConnectionState();
-        if (connected != _parsecConnected)
+        ParsecConnectionSnapshot snapshot = ReadParsecConnectionState();
+        if (!String.Equals(snapshot.Signature, _connectionSignature, StringComparison.Ordinal))
         {
-            _parsecConnected = connected;
-            _sessionItem.Checked = false;
-            _sessionAndroidMode = false;
+            _connectionSnapshot = snapshot;
+            _connectionSignature = snapshot.Signature;
+            _parsecConnected = snapshot.ClientPorts.Count > 0;
+            _sessionAndroidMode = IsKnownAndroidConnection(snapshot);
             ResetTransientInputState();
-            WriteStatus("Session Parsec " + (connected ? "détectée" : "terminée"));
+            WriteStatus(DescribeConnection(snapshot));
         }
         UpdateTray();
     }
 
-    private bool ReadParsecConnectionState()
+    private ParsecConnectionSnapshot ReadParsecConnectionState()
     {
         try
         {
             if (!File.Exists(_parsecLog))
-                return false;
+                return new ParsecConnectionSnapshot();
 
-            int sessions = 0;
+            var ports = new List<int>();
+            int pendingPort = 0;
             using (var stream = new FileStream(_parsecLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             using (var reader = new StreamReader(stream))
             {
                 string line;
                 while ((line = reader.ReadLine()) != null)
                 {
+                    if (ParsecRestartLine.IsMatch(line))
+                    {
+                        ports.Clear();
+                        pendingPort = 0;
+                        continue;
+                    }
+
+                    Match network = NetworkLine.Match(line);
+                    if (network.Success)
+                    {
+                        Int32.TryParse(network.Groups["port"].Value, out pendingPort);
+                        continue;
+                    }
+
                     if (ConnectedLine.IsMatch(line))
-                        sessions++;
+                    {
+                        ports.Add(pendingPort);
+                        pendingPort = 0;
+                    }
                     else if (DisconnectedLine.IsMatch(line))
-                        sessions = Math.Max(0, sessions - 1);
+                    {
+                        if (ports.Count > 0)
+                            ports.RemoveAt(ports.Count - 1);
+                        pendingPort = 0;
+                    }
                 }
             }
-            return sessions > 0;
+            return new ParsecConnectionSnapshot(ports);
         }
         catch
         {
-            return _parsecConnected;
+            return _connectionSnapshot;
+        }
+    }
+
+    private bool IsKnownAndroidConnection(ParsecConnectionSnapshot snapshot)
+    {
+        if (snapshot.ClientPorts.Count == 0)
+            return false;
+
+        foreach (int port in snapshot.ClientPorts)
+            if (port <= 0 || !_androidClientPorts.Contains(port))
+                return false;
+        return true;
+    }
+
+    private string DescribeConnection(ParsecConnectionSnapshot snapshot)
+    {
+        if (snapshot.ClientPorts.Count == 0)
+            return "Session Parsec terminée — retour automatique au mode standard";
+        if (_sessionAndroidMode)
+            return "Appareil Android reconnu — correction automatique active (port " + snapshot.ClientPorts[0] + ")";
+        return "Connexion Parsec standard — aucune correction (port " + snapshot.ClientPorts[0] + ")";
+    }
+
+    private void LearnCurrentConnection()
+    {
+        if (_connectionSnapshot.ClientPorts.Count != 1 || _connectionSnapshot.ClientPorts[0] <= 0)
+        {
+            MessageBox.Show(
+                "Connectez uniquement l'appareil Android à ce PC, puis réessayez.",
+                "Parsec AZERTY Fix",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        int port = _connectionSnapshot.ClientPorts[0];
+        _androidClientPorts.Add(port);
+        SaveAndroidClientPorts();
+        _sessionAndroidMode = true;
+        ResetTransientInputState();
+        WriteStatus("Connexion apprise comme appareil Android (port " + port + ")");
+        UpdateTray();
+    }
+
+    private void ForgetAndroidClients()
+    {
+        _androidClientPorts.Clear();
+        SaveAndroidClientPorts();
+        _sessionAndroidMode = false;
+        ResetTransientInputState();
+        WriteStatus("Appareils Android enregistrés oubliés");
+        UpdateTray();
+    }
+
+    private void LoadAndroidClientPorts()
+    {
+        try
+        {
+            if (!File.Exists(_androidClientsFile))
+                return;
+            foreach (string line in File.ReadAllLines(_androidClientsFile))
+            {
+                int port;
+                if (Int32.TryParse(line.Trim(), out port) && port > 0 && port <= 65535)
+                    _androidClientPorts.Add(port);
+            }
+        }
+        catch { }
+    }
+
+    private void SaveAndroidClientPorts()
+    {
+        try
+        {
+            var ports = new List<int>(_androidClientPorts);
+            ports.Sort();
+            var lines = new List<string>();
+            foreach (int port in ports)
+                lines.Add(port.ToString());
+            File.WriteAllLines(_androidClientsFile, lines.ToArray());
+        }
+        catch (Exception error)
+        {
+            WriteStatus("Impossible d'enregistrer les appareils Android : " + error.Message);
         }
     }
 
@@ -215,11 +330,15 @@ internal sealed class FixContext : ApplicationContext
         else if (!_parsecConnected)
             state = "en attente de Parsec";
         else if (_sessionAndroidMode)
-            state = "mode Android actif";
+            state = "Android reconnu — correction active";
         else
-            state = "mode standard — aucune correction";
+            state = "connexion standard — aucune correction";
 
         _statusItem.Text = "État : " + state;
+        bool oneKnownClient = _connectionSnapshot.ClientPorts.Count == 1 &&
+                              _connectionSnapshot.ClientPorts[0] > 0;
+        _learnCurrentItem.Enabled = oneKnownClient && !_sessionAndroidMode;
+        _forgetClientsItem.Enabled = _androidClientPorts.Count > 0;
         _tray.Text = "Parsec AZERTY Fix — " + state;
     }
 
@@ -230,7 +349,6 @@ internal sealed class FixContext : ApplicationContext
         _remoteAlt = false;
         _composeArmed = false;
         _composeConsumedScan = 0;
-        _toggleConsumedScan = 0;
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -276,23 +394,6 @@ internal sealed class FixContext : ApplicationContext
         char sourceCharacter;
         bool hasSourceCharacter = TryGetUsSourceCharacter(
             data.vkCode, data.scanCode, sourceShift, out sourceCharacter);
-
-        if (up && _toggleConsumedScan == data.scanCode)
-        {
-            _toggleConsumedScan = 0;
-            return new IntPtr(1);
-        }
-
-        bool androidToggle = hasSourceCharacter &&
-                             Char.ToLowerInvariant(sourceCharacter) == 'a';
-        bool universalToggle = data.vkCode == 0x7B; // F12
-        if (down && controlDown && altDown &&
-            (androidToggle || universalToggle))
-        {
-            _sessionItem.Checked = !_sessionItem.Checked;
-            _toggleConsumedScan = data.scanCode;
-            return new IntPtr(1);
-        }
 
         if (!_sessionAndroidMode)
             return CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -509,6 +610,26 @@ internal sealed class FixContext : ApplicationContext
         var up = down;
         up.U.ki.dwFlags = 0x0004 | KEYEVENTF_KEYUP;
         SendInput(2, new INPUT[] { down, up }, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    private sealed class ParsecConnectionSnapshot
+    {
+        public readonly List<int> ClientPorts;
+        public readonly string Signature;
+
+        public ParsecConnectionSnapshot()
+            : this(new List<int>())
+        {
+        }
+
+        public ParsecConnectionSnapshot(List<int> ports)
+        {
+            ClientPorts = new List<int>(ports);
+            string[] values = new string[ClientPorts.Count];
+            for (int index = 0; index < ClientPorts.Count; index++)
+                values[index] = ClientPorts[index].ToString();
+            Signature = String.Join(",", values);
+        }
     }
 
     private void WriteStatus(string message)

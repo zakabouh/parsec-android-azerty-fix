@@ -9,7 +9,7 @@ using Microsoft.Win32;
 internal static class Installer
 {
     private const string ProductName = "Parsec Android AZERTY Fix";
-    private const string Version = "1.1.0";
+    private const string Version = "1.2.0";
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\ParsecAzertyFix";
     private const string RunValueName = "ParsecAzertyFix";
@@ -122,6 +122,7 @@ internal static class Installer
 
         DeleteIfPresent(executable);
         DeleteIfPresent(Path.Combine(installDirectory, "status.log"));
+        DeleteIfPresent(Path.Combine(installDirectory, "android-clients.txt"));
         DeleteIfPresent(Path.Combine(installDirectory, "ParsecAzertyFix.exe.new"));
         if (!PathsEqual(Assembly.GetExecutingAssembly().Location, uninstaller))
             DeleteIfPresent(uninstaller);
