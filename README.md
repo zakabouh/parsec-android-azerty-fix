@@ -1,41 +1,86 @@
-# Parsec Android AZERTY Fix
+# Fix Parsec Android AZERTY keyboard mapping on Windows
 
-Correcteur Windows leger pour les problemes de clavier rencontres avec le client **Parsec sur Android** et un PC hote configure en **francais AZERTY**.
+[Lire en français](README.fr.md)
 
-Il corrige notamment :
+An open-source Windows workaround for **Parsec Android keyboard layout problems** when an **AZERTY keyboard is recognized as QWERTY** on the remote Windows host.
 
-- les lettres `A/Q`, `Z/W` et `M` recues comme si le clavier Android etait QWERTY ;
-- les chiffres et la ponctuation de la disposition US envoyee par Parsec ;
-- plusieurs caracteres Unicode que le clavier Android n'envoie pas directement ;
-- Retour arriere et Supprimer au moyen de raccourcis de composition facultatifs.
+It fixes swapped `A/Q`, `Z/W` and `M` keys, number-row and punctuation mapping, and provides fallbacks for special characters, Backspace and Delete. It works with the Android on-screen keyboard and with many Samsung Galaxy Tab, Samsung DeX, Gboard, Bluetooth and USB keyboard setups.
 
-Le correcteur ne modifie pas la disposition Windows. Il reste en attente dans la zone de notification et ne traite que les evenements injectes pendant une session Parsec detectee. Le clavier physique et la souris locale restent donc inchanges.
+## Does this match your problem?
 
-## Installation
+This project targets symptoms commonly described as:
 
-1. Telechargez `ParsecAzertyFix-Setup.exe` depuis la [derniere release](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest).
-2. Lancez l'installateur.
-3. Reconnectez-vous au PC avec Parsec Android.
+- “Parsec Android keyboard is stuck in QWERTY”;
+- “my AZERTY keyboard is recognized as QWERTY on the Windows host”;
+- “A and Q / Z and W are swapped in Parsec”;
+- “Parsec uses the wrong keyboard layout”;
+- “number keys type symbols” or “numbers do not work on the Windows login screen”;
+- “special characters do not work in Parsec Android”;
+- “Backspace does not work unless I hold it down”;
+- “Delete, Enter or special keys are not sent from Android”;
+- “Samsung DeX / Galaxy Tab physical keyboard is mapped incorrectly”;
+- “Parsec Android Bluetooth keyboard or USB keyboard has mixed-up keys”.
 
-L'installation est effectuee uniquement pour l'utilisateur courant, sans droits administrateur :
+The helper runs on the **Windows host after a Parsec connection has been established**. It does not modify the Android app itself.
+
+## Frequently searched questions
+
+### Why does Parsec Android type QWERTY on my AZERTY PC?
+
+Parsec can send Android/US key positions while the Windows host interprets them through its French layout. This makes an AZERTY keyboard behave like QWERTY and swaps keys such as `A/Q` and `Z/W`. The helper translates those remote events before Windows applications receive them.
+
+### Why do the number keys type symbols in Parsec?
+
+The US and French number rows use Shift differently. When US scan codes are interpreted as French AZERTY input, `1`, `2`, `3` and other numbers can become `&`, `é`, `"` or other characters. The helper sends the intended number or punctuation character directly.
+
+### Why does Backspace only work when held?
+
+Some Android keyboards send Backspace inconsistently through Parsec. The helper preserves normal Backspace events and also offers `` `b `` as a fallback. It cannot recover a tap if the Android client sends no event at all.
+
+## Limitations
+
+- It cannot fix typing inside Parsec's own Android login screen.
+- It cannot operate on the Windows secure sign-in/PIN screen before the user session starts.
+- It cannot reconstruct a key for which Android and Parsec transmit absolutely no event; the compose shortcuts are the fallback for those characters.
+- Enter, mouse/right-click and controller problems are outside this keyboard-layout fix.
+- Double typing caused by some SwiftKey configurations is a separate Android keyboard issue.
+
+## What it fixes
+
+- Converts the Android/US QWERTY scan-code positions to French AZERTY for `A/Q`, `Z/W` and `M`.
+- Converts the US number row and punctuation to the intended characters instead of letting the French host layout reinterpret them.
+- Provides a compose-key fallback for Unicode symbols that Parsec Android does not transmit as usable Windows key events.
+- Provides optional compose shortcuts for Backspace and Delete.
+- Only processes injected keyboard events while a Parsec session is detected.
+- Leaves the physical Windows keyboard and local mouse unchanged.
+
+Parsec officially describes its Android app as experimental and says mouse and keyboard input may work incorrectly in some cases. See [Install Parsec App on Android](https://support.parsec.app/hc/en-us/articles/32381582866452-Install-Parsec-App-on-Android).
+
+## Install
+
+1. Download [`ParsecAzertyFix-Setup.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-Setup.exe).
+2. Run the installer.
+3. Reconnect to the Windows host with Parsec Android.
+
+No administrator rights are required. The application is installed for the current Windows user at:
 
 ```text
 %LOCALAPPDATA%\ParsecAzertyFix\ParsecAzertyFix.exe
 ```
 
-Le programme est ajoute a `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` afin de demarrer automatiquement a chaque ouverture de session Windows.
+It is registered under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, so it starts automatically at every Windows sign-in.
 
-> L'executable n'est pas signe numeriquement. Windows SmartScreen peut donc afficher un avertissement d'editeur inconnu. Le code source et le script de construction sont fournis dans ce depot.
+> The executable is not code-signed. Windows SmartScreen may therefore display an “Unknown publisher” warning. The complete source code and reproducible build script are available in this repository.
 
-## Utilisation
+## Usage
 
-Une icone apparait dans la zone de notification Windows. Son menu permet de desactiver temporairement la correction ou de quitter le programme.
+The tray icon reports whether the fix is waiting for Parsec or active during a session. Its menu can temporarily disable the correction or exit the program.
 
-### Caracteres de composition
+### Compose shortcuts for missing characters
 
-Certaines touches Unicode du clavier Android ne produisent aucun evenement exploitable dans Parsec. Le correcteur fournit donc une touche de composition : tapez l'accent grave `` ` ``, puis la touche indiquee.
+Some Android keyboard symbols never reach the Windows host as usable key events. Type a backtick `` ` `` followed by the listed key:
 
-| Sequence | Resultat | Sequence | Resultat |
+| Sequence | Output | Sequence | Output |
 |---|---:|---|---:|
 | `` `e `` | `€` | `` `l `` | `£` |
 | `` `y `` | `¥` | `` `c `` | `¢` |
@@ -45,43 +90,38 @@ Certaines touches Unicode du clavier Android ne produisent aucun evenement explo
 | `` `\| `` | `¦` | `` `- `` | `¬` |
 | `` `x `` | `×` | `` `s `` | `§` |
 | `` `p `` | `¶` | `` `d `` | `°` |
-| `` `b `` | Retour arriere | `` `u `` | Supprimer |
-| `` `` `` | accent grave litteral | | |
+| `` `b `` | Backspace | `` `u `` | Delete |
+| <kbd>`</kbd> <kbd>`</kbd> | Literal backtick | | |
 
-Une composition incomplete est annulee apres cinq secondes et produit un accent grave normal.
+An incomplete compose sequence expires after five seconds and outputs a normal backtick.
 
-## Desinstallation
+## Uninstall
 
-Ouvrez **Parametres > Applications > Applications installees**, recherchez **Parsec Android AZERTY Fix**, puis choisissez **Desinstaller**.
+Open **Windows Settings > Apps > Installed apps**, find **Parsec Android AZERTY Fix**, and select **Uninstall**.
 
-## Construction depuis les sources
+## Build from source
 
-Sur Windows 10 ou Windows 11 avec .NET Framework 4.x :
+On Windows 10 or Windows 11 with .NET Framework 4.x:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 ```
 
-Les fichiers sont generes dans `artifacts\` :
+The `artifacts\` directory will contain:
 
-- `ParsecAzertyFix.exe` : correcteur portable ;
-- `ParsecAzertyFix-Setup.exe` : installateur autonome contenant le correcteur ;
-- `SHA256SUMS.txt` : empreintes SHA-256.
+- `ParsecAzertyFix.exe` — portable helper;
+- `ParsecAzertyFix-Setup.exe` — standalone per-user installer with the helper embedded;
+- `SHA256SUMS.txt` — SHA-256 checksums.
 
-## Fonctionnement et confidentialite
+## Privacy and security
 
-- hook clavier Windows bas niveau (`WH_KEYBOARD_LL`) ;
-- reinjection locale avec `SendInput` ;
-- detection d'une session active dans `%APPDATA%\Parsec\log.txt` ;
-- aucune connexion reseau, telemetrie ou collecte de donnees ;
-- aucun droit administrateur requis.
+- Uses the Windows low-level keyboard hook (`WH_KEYBOARD_LL`) and local `SendInput` calls.
+- Reads `%APPDATA%\Parsec\log.txt` only to determine whether a Parsec session is connected.
+- Makes no network connections and contains no telemetry or data collection.
+- Does not require administrator privileges.
 
-Le support clavier de Parsec Android est experimental et peut varier selon le clavier logiciel, le constructeur du telephone et la version de Parsec. Ce projet est un contournement communautaire non officiel et n'est pas affilie a Parsec.
+This is an unofficial community workaround and is not affiliated with or endorsed by Parsec.
 
-## English summary
-
-This is an unofficial, per-user Windows workaround for Parsec Android keyboard events received on a French AZERTY host. Download the release installer, run it, and the helper will start automatically at Windows logon. It does not use the network or require administrator rights.
-
-## Licence
+## License
 
 [MIT](LICENSE)
