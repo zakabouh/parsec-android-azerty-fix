@@ -62,7 +62,7 @@ Parsec officially describes its Android app as experimental and says mouse and k
 
 ## Install
 
-1. Download [`ParsecAzertyFix-Setup.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-Setup.exe).
+1. Download **[`ParsecAzertyFix-INSTALLER.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-INSTALLER.exe)**. This is the recommended file for almost everyone.
 2. Run the installer.
 3. Connect normally from Android or another computer. Detection is automatic.
 
@@ -127,9 +127,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 The `artifacts\` directory will contain:
 
-- `ParsecAzertyFix.exe` — portable helper;
-- `ParsecAzertyFix-Setup.exe` — standalone per-user installer with the helper embedded;
-- `SHA256SUMS.txt` — SHA-256 checksums.
+- `ParsecAzertyFix-INSTALLER.exe` — recommended standalone per-user installer;
+- `ParsecAzertyFix-PORTABLE.exe` — portable helper for advanced users, without installation or automatic startup;
+- `SHA256-CHECKSUMS.txt` — optional SHA-256 checksums for file verification.
 
 ## Privacy and security
 

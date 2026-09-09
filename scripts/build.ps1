@@ -15,8 +15,8 @@ if (-not (Test-Path -LiteralPath $compiler)) {
 New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
 Get-ChildItem -LiteralPath $artifacts -File -ErrorAction SilentlyContinue | Remove-Item -Force
 
-$app = Join-Path $artifacts 'ParsecAzertyFix.exe'
-$setup = Join-Path $artifacts 'ParsecAzertyFix-Setup.exe'
+$app = Join-Path $artifacts 'ParsecAzertyFix-PORTABLE.exe'
+$setup = Join-Path $artifacts 'ParsecAzertyFix-INSTALLER.exe'
 
 & $compiler /nologo /target:winexe /platform:anycpu /optimize+ `
     /out:$app `
@@ -39,6 +39,6 @@ if ($LASTEXITCODE -ne 0) { throw "Installer build failed with exit code $LASTEXI
 
 $hashLines = Get-FileHash -LiteralPath $app, $setup -Algorithm SHA256 |
     ForEach-Object { '{0}  {1}' -f $_.Hash.ToLowerInvariant(), (Split-Path -Leaf $_.Path) }
-$hashLines | Set-Content -LiteralPath (Join-Path $artifacts 'SHA256SUMS.txt') -Encoding ascii
+$hashLines | Set-Content -LiteralPath (Join-Path $artifacts 'SHA256-CHECKSUMS.txt') -Encoding ascii
 
 Get-ChildItem -LiteralPath $artifacts | Select-Object Name, Length, LastWriteTime

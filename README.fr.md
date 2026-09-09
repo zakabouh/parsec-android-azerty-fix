@@ -63,7 +63,7 @@ Parsec présente officiellement son application Android comme expérimentale et 
 
 ## Installation
 
-1. Téléchargez [`ParsecAzertyFix-Setup.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-Setup.exe).
+1. Téléchargez **[`ParsecAzertyFix-INSTALLER.exe`](https://github.com/zakabouh/parsec-android-azerty-fix/releases/latest/download/ParsecAzertyFix-INSTALLER.exe)**. C'est le fichier recommandé pour presque tout le monde.
 2. Lancez l'installateur.
 3. Connectez-vous normalement depuis Android ou un autre ordinateur. La détection est automatique.
 
@@ -128,9 +128,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 Le dossier `artifacts\` contiendra :
 
-- `ParsecAzertyFix.exe` — correcteur portable ;
-- `ParsecAzertyFix-Setup.exe` — installateur autonome par utilisateur ;
-- `SHA256SUMS.txt` — empreintes SHA-256.
+- `ParsecAzertyFix-INSTALLER.exe` — installateur recommandé pour l'utilisateur Windows courant ;
+- `ParsecAzertyFix-PORTABLE.exe` — version portable pour utilisateurs avancés, sans installation ni démarrage automatique ;
+- `SHA256-CHECKSUMS.txt` — empreintes SHA-256 facultatives pour vérifier les fichiers.
 
 ## Confidentialité et sécurité
 
