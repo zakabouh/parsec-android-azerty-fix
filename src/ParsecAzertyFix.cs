@@ -43,6 +43,10 @@ internal sealed class FixContext : ApplicationContext
     private const int VK_MENU = 0x12;
     private const int VK_LWIN = 0x5B;
     private const int VK_RWIN = 0x5C;
+    private const int ClassificationDelayMilliseconds = 35;
+    private const int FastTapMaximumMilliseconds = 25;
+    private const int ShiftBurstMaximumMilliseconds = 30;
+    private const int StandardEvidenceRequired = 2;
     private const ulong OwnInputMarker = 0x504152534543415AUL; // "PARSECAZ"
 
     private static readonly Regex ConnectedLine = new Regex(
@@ -60,21 +64,27 @@ internal sealed class FixContext : ApplicationContext
 
     private readonly string _parsecLog;
     private readonly string _statusLog;
-    private readonly string _androidClientsFile;
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _statusItem;
-    private readonly ToolStripMenuItem _learnCurrentItem;
-    private readonly ToolStripMenuItem _forgetClientsItem;
+    private readonly ToolStripMenuItem _retryDetectionItem;
+    private readonly ToolStripMenuItem _forceAndroidItem;
     private readonly ToolStripMenuItem _enabledItem;
     private readonly System.Windows.Forms.Timer _connectionTimer;
+    private readonly System.Windows.Forms.Timer _classificationTimer;
     private readonly LowLevelKeyboardProc _callback;
-    private readonly HashSet<int> _androidClientPorts = new HashSet<int>();
     private IntPtr _hook;
     private bool _enabled = true;
     private bool _parsecConnected;
-    private bool _sessionAndroidMode;
+    private SessionInputMode _sessionMode = SessionInputMode.Standard;
     private string _connectionSignature = String.Empty;
     private ParsecConnectionSnapshot _connectionSnapshot = new ParsecConnectionSnapshot();
+    private PendingKey _pendingKey;
+    private uint _timedOutScan;
+    private uint _timedOutVirtualKey;
+    private int _slowTapEvidence;
+    private int _shiftBurstCount;
+    private long _shiftBurstStartedAt;
+    private bool _androidShiftSignatureArmed;
     private bool _remoteShift;
     private bool _remoteControl;
     private bool _remoteAlt;
@@ -89,8 +99,6 @@ internal sealed class FixContext : ApplicationContext
             "ParsecAzertyFix");
         Directory.CreateDirectory(localDir);
         _statusLog = Path.Combine(localDir, "status.log");
-        _androidClientsFile = Path.Combine(localDir, "android-clients.txt");
-        LoadAndroidClientPorts();
         _parsecLog = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Parsec",
@@ -98,10 +106,10 @@ internal sealed class FixContext : ApplicationContext
 
         _statusItem = new ToolStripMenuItem("État : démarrage…");
         _statusItem.Enabled = false;
-        _learnCurrentItem = new ToolStripMenuItem("Reconnaître cette connexion comme Android");
-        _learnCurrentItem.Click += delegate { LearnCurrentConnection(); };
-        _forgetClientsItem = new ToolStripMenuItem("Oublier les appareils Android enregistrés");
-        _forgetClientsItem.Click += delegate { ForgetAndroidClients(); };
+        _retryDetectionItem = new ToolStripMenuItem("Relancer la détection automatique");
+        _retryDetectionItem.Click += delegate { RetryAutomaticDetection(); };
+        _forceAndroidItem = new ToolStripMenuItem("Forcer Android pour cette session");
+        _forceAndroidItem.Click += delegate { ForceAndroidForCurrentSession(); };
 
         _enabledItem = new ToolStripMenuItem("Correcteur activé (interrupteur général)");
         _enabledItem.Checked = true;
@@ -117,8 +125,8 @@ internal sealed class FixContext : ApplicationContext
         exitItem.Click += delegate { ExitThread(); };
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
-        menu.Items.Add(_learnCurrentItem);
-        menu.Items.Add(_forgetClientsItem);
+        menu.Items.Add(_retryDetectionItem);
+        menu.Items.Add(_forceAndroidItem);
         menu.Items.Add(_enabledItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
@@ -127,6 +135,10 @@ internal sealed class FixContext : ApplicationContext
         _tray.Icon = SystemIcons.Application;
         _tray.ContextMenuStrip = menu;
         _tray.Visible = true;
+
+        _classificationTimer = new System.Windows.Forms.Timer();
+        _classificationTimer.Interval = ClassificationDelayMilliseconds;
+        _classificationTimer.Tick += delegate { ClassificationTimerElapsed(); };
 
         _callback = HookCallback;
         _hook = SetWindowsHookEx(WH_KEYBOARD_LL, _callback, GetModuleHandle(null), 0);
@@ -156,6 +168,8 @@ internal sealed class FixContext : ApplicationContext
     {
         if (_connectionTimer != null)
             _connectionTimer.Stop();
+        if (_classificationTimer != null)
+            _classificationTimer.Stop();
         if (_hook != IntPtr.Zero)
         {
             UnhookWindowsHookEx(_hook);
@@ -181,8 +195,10 @@ internal sealed class FixContext : ApplicationContext
             _connectionSnapshot = snapshot;
             _connectionSignature = snapshot.Signature;
             _parsecConnected = snapshot.ClientPorts.Count > 0;
-            _sessionAndroidMode = IsKnownAndroidConnection(snapshot);
             ResetTransientInputState();
+            _sessionMode = snapshot.ClientPorts.Count == 1
+                ? SessionInputMode.Unknown
+                : SessionInputMode.Standard;
             WriteStatus(DescribeConnection(snapshot));
         }
         UpdateTray();
@@ -238,88 +254,39 @@ internal sealed class FixContext : ApplicationContext
         }
     }
 
-    private bool IsKnownAndroidConnection(ParsecConnectionSnapshot snapshot)
-    {
-        if (snapshot.ClientPorts.Count == 0)
-            return false;
-
-        foreach (int port in snapshot.ClientPorts)
-            if (port <= 0 || !_androidClientPorts.Contains(port))
-                return false;
-        return true;
-    }
-
     private string DescribeConnection(ParsecConnectionSnapshot snapshot)
     {
         if (snapshot.ClientPorts.Count == 0)
             return "Session Parsec terminée — retour automatique au mode standard";
-        if (_sessionAndroidMode)
-            return "Appareil Android reconnu — correction automatique active (port " + snapshot.ClientPorts[0] + ")";
-        return "Connexion Parsec standard — aucune correction (port " + snapshot.ClientPorts[0] + ")";
+        if (snapshot.ClientPorts.Count > 1)
+            return "Plusieurs clients Parsec — mode standard par sécurité";
+        return "Nouvelle session Parsec — détection automatique en attente";
     }
 
-    private void LearnCurrentConnection()
+    private void RetryAutomaticDetection()
     {
-        if (_connectionSnapshot.ClientPorts.Count != 1 || _connectionSnapshot.ClientPorts[0] <= 0)
+        if (!_parsecConnected || _connectionSnapshot.ClientPorts.Count != 1)
         {
             MessageBox.Show(
-                "Connectez uniquement l'appareil Android à ce PC, puis réessayez.",
+                "Connectez un seul appareil à ce PC, puis réessayez.",
                 "Parsec AZERTY Fix",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             return;
         }
 
-        int port = _connectionSnapshot.ClientPorts[0];
-        _androidClientPorts.Add(port);
-        SaveAndroidClientPorts();
-        _sessionAndroidMode = true;
         ResetTransientInputState();
-        WriteStatus("Connexion apprise comme appareil Android (port " + port + ")");
+        _sessionMode = SessionInputMode.Unknown;
+        WriteStatus("Détection automatique relancée pour la session actuelle");
         UpdateTray();
     }
 
-    private void ForgetAndroidClients()
+    private void ForceAndroidForCurrentSession()
     {
-        _androidClientPorts.Clear();
-        SaveAndroidClientPorts();
-        _sessionAndroidMode = false;
+        if (!_parsecConnected || _connectionSnapshot.ClientPorts.Count != 1)
+            return;
         ResetTransientInputState();
-        WriteStatus("Appareils Android enregistrés oubliés");
-        UpdateTray();
-    }
-
-    private void LoadAndroidClientPorts()
-    {
-        try
-        {
-            if (!File.Exists(_androidClientsFile))
-                return;
-            foreach (string line in File.ReadAllLines(_androidClientsFile))
-            {
-                int port;
-                if (Int32.TryParse(line.Trim(), out port) && port > 0 && port <= 65535)
-                    _androidClientPorts.Add(port);
-            }
-        }
-        catch { }
-    }
-
-    private void SaveAndroidClientPorts()
-    {
-        try
-        {
-            var ports = new List<int>(_androidClientPorts);
-            ports.Sort();
-            var lines = new List<string>();
-            foreach (int port in ports)
-                lines.Add(port.ToString());
-            File.WriteAllLines(_androidClientsFile, lines.ToArray());
-        }
-        catch (Exception error)
-        {
-            WriteStatus("Impossible d'enregistrer les appareils Android : " + error.Message);
-        }
+        SetSessionMode(SessionInputMode.Android, "Mode Android forcé pour la session actuelle");
     }
 
     private void UpdateTray()
@@ -329,26 +296,231 @@ internal sealed class FixContext : ApplicationContext
             state = "désactivé";
         else if (!_parsecConnected)
             state = "en attente de Parsec";
-        else if (_sessionAndroidMode)
-            state = "Android reconnu — correction active";
+        else if (_sessionMode == SessionInputMode.Android)
+            state = "Android détecté — correction active";
+        else if (_sessionMode == SessionInputMode.Unknown)
+            state = "détection automatique…";
         else
             state = "connexion standard — aucune correction";
 
         _statusItem.Text = "État : " + state;
-        bool oneKnownClient = _connectionSnapshot.ClientPorts.Count == 1 &&
-                              _connectionSnapshot.ClientPorts[0] > 0;
-        _learnCurrentItem.Enabled = oneKnownClient && !_sessionAndroidMode;
-        _forgetClientsItem.Enabled = _androidClientPorts.Count > 0;
+        bool oneClient = _parsecConnected && _connectionSnapshot.ClientPorts.Count == 1;
+        _retryDetectionItem.Enabled = oneClient;
+        _forceAndroidItem.Enabled = oneClient && _sessionMode != SessionInputMode.Android;
         _tray.Text = "Parsec AZERTY Fix — " + state;
     }
 
     private void ResetTransientInputState()
     {
+        _classificationTimer.Stop();
+        _pendingKey = null;
+        _timedOutScan = 0;
+        _timedOutVirtualKey = 0;
+        _slowTapEvidence = 0;
+        _shiftBurstCount = 0;
+        _shiftBurstStartedAt = 0;
+        _androidShiftSignatureArmed = false;
         _remoteShift = false;
         _remoteControl = false;
         _remoteAlt = false;
         _composeArmed = false;
         _composeConsumedScan = 0;
+    }
+
+    private void SetSessionMode(SessionInputMode mode, string status)
+    {
+        _classificationTimer.Stop();
+        _pendingKey = null;
+        _timedOutScan = 0;
+        _timedOutVirtualKey = 0;
+        _sessionMode = mode;
+        WriteStatus(status);
+        UpdateTray();
+    }
+
+    private bool HandleUnknownInput(
+        KBDLLHOOKSTRUCT data,
+        bool down,
+        bool up,
+        bool sourceShift,
+        bool noShortcutModifier)
+    {
+        if (down && noShortcutModifier && _androidShiftSignatureArmed &&
+            IsDetectionCandidate(data))
+        {
+            SetSessionMode(
+                SessionInputMode.Android,
+                "Clavier tactile Android détecté automatiquement (signature Shift)");
+            return ProcessAndroidEvent(
+                data, true, false, sourceShift, noShortcutModifier);
+        }
+
+        if (_pendingKey != null)
+        {
+            if (up && _pendingKey.Matches(data))
+            {
+                PendingKey pending = _pendingKey;
+                _pendingKey = null;
+                _classificationTimer.Stop();
+
+                double elapsedMilliseconds = pending.ElapsedMilliseconds;
+                if (elapsedMilliseconds <= FastTapMaximumMilliseconds)
+                {
+                    SetSessionMode(
+                        SessionInputMode.Android,
+                        "Clavier tactile Android détecté automatiquement (tap " +
+                        Math.Round(elapsedMilliseconds) + " ms)");
+                    ReplayAndroidTap(pending, data);
+                    return true;
+                }
+
+                SendOriginalKeyboard(pending.Data, false);
+                RegisterSlowTap();
+                return false;
+            }
+
+            if (down && noShortcutModifier && IsDetectionCandidate(data))
+            {
+                PendingKey pending = _pendingKey;
+                _pendingKey = null;
+                _classificationTimer.Stop();
+                SendOriginalKeyboard(pending.Data, false);
+                SetSessionMode(
+                    SessionInputMode.Standard,
+                    "Clavier standard détecté automatiquement (touches simultanées)");
+                return false;
+            }
+
+            return false;
+        }
+
+        if (_timedOutScan != 0)
+        {
+            if (up && data.scanCode == _timedOutScan && data.vkCode == _timedOutVirtualKey)
+            {
+                _timedOutScan = 0;
+                _timedOutVirtualKey = 0;
+                RegisterSlowTap();
+                return false;
+            }
+
+            if (down && noShortcutModifier && IsDetectionCandidate(data))
+            {
+                SetSessionMode(
+                    SessionInputMode.Standard,
+                    "Clavier standard détecté automatiquement (touches simultanées)");
+                return false;
+            }
+        }
+
+        if (down && noShortcutModifier && IsDetectionCandidate(data))
+        {
+            _pendingKey = new PendingKey(data, sourceShift, noShortcutModifier);
+            _classificationTimer.Stop();
+            _classificationTimer.Start();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ClassificationTimerElapsed()
+    {
+        _classificationTimer.Stop();
+        if (_sessionMode != SessionInputMode.Unknown || _pendingKey == null)
+            return;
+
+        PendingKey pending = _pendingKey;
+        _pendingKey = null;
+        _timedOutScan = pending.Data.scanCode;
+        _timedOutVirtualKey = pending.Data.vkCode;
+        SendOriginalKeyboard(pending.Data, false);
+    }
+
+    private void RegisterSlowTap()
+    {
+        _slowTapEvidence++;
+        if (_slowTapEvidence >= StandardEvidenceRequired)
+        {
+            SetSessionMode(
+                SessionInputMode.Standard,
+                "Clavier standard détecté automatiquement (pressions physiques)");
+        }
+    }
+
+    private void ReplayAndroidTap(PendingKey pending, KBDLLHOOKSTRUCT upData)
+    {
+        bool temporaryShift = pending.SourceShift && IsLetterScan(pending.Data.scanCode) &&
+                              !_remoteShift && !ModifierDown(VK_SHIFT);
+        if (temporaryShift)
+            SendScan(0x2A, false);
+
+        if (!ProcessAndroidEvent(
+                pending.Data,
+                true,
+                false,
+                pending.SourceShift,
+                pending.NoShortcutModifier))
+        {
+            SendOriginalKeyboard(pending.Data, false);
+        }
+
+        if (!ProcessAndroidEvent(
+                upData,
+                false,
+                true,
+                pending.SourceShift,
+                pending.NoShortcutModifier))
+        {
+            SendOriginalKeyboard(upData, true);
+        }
+
+        if (temporaryShift)
+            SendScan(0x2A, true);
+    }
+
+    private static bool IsDetectionCandidate(KBDLLHOOKSTRUCT data)
+    {
+        if (data.vkCode == 0xE7 || data.scanCode == 0)
+            return false;
+        if (IsLetterScan(data.scanCode))
+            return true;
+
+        char ignored;
+        return TryGetUsPrintable(data.vkCode, data.scanCode, false, out ignored);
+    }
+
+    private static bool IsLetterScan(uint scan)
+    {
+        return (scan >= 0x10 && scan <= 0x19) ||
+               (scan >= 0x1E && scan <= 0x26) ||
+               (scan >= 0x2C && scan <= 0x32);
+    }
+
+    private static void SendOriginalKeyboard(KBDLLHOOKSTRUCT data, bool keyUp)
+    {
+        SendScan(data.scanCode, keyUp, (data.flags & 0x00000001) != 0);
+    }
+
+    private void ObserveUnknownShiftDown()
+    {
+        long now = Stopwatch.GetTimestamp();
+        double elapsed = _shiftBurstStartedAt == 0
+            ? Double.MaxValue
+            : (now - _shiftBurstStartedAt) * 1000.0 / Stopwatch.Frequency;
+
+        if (elapsed <= ShiftBurstMaximumMilliseconds)
+        {
+            _shiftBurstCount++;
+        }
+        else
+        {
+            _shiftBurstCount = 1;
+            _shiftBurstStartedAt = now;
+        }
+
+        if (_shiftBurstCount >= 2)
+            _androidShiftSignatureArmed = true;
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -370,6 +542,8 @@ internal sealed class FixContext : ApplicationContext
 
         if (data.vkCode == 0x10 || data.vkCode == 0xA0 || data.vkCode == 0xA1)
         {
+            if (down && _sessionMode == SessionInputMode.Unknown)
+                ObserveUnknownShiftDown();
             _remoteShift = down;
             return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
@@ -386,23 +560,42 @@ internal sealed class FixContext : ApplicationContext
             return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
 
-        bool controlDown = _remoteControl || ModifierDown(VK_CONTROL);
-        bool altDown = _remoteAlt || ModifierDown(VK_MENU);
-        bool noShortcutModifier = !controlDown && !altDown &&
-                                  !ModifierDown(VK_LWIN) && !ModifierDown(VK_RWIN);
         bool sourceShift = _remoteShift || ModifierDown(VK_SHIFT);
-        char sourceCharacter;
-        bool hasSourceCharacter = TryGetUsSourceCharacter(
-            data.vkCode, data.scanCode, sourceShift, out sourceCharacter);
+        bool noShortcutModifier = !_remoteControl && !_remoteAlt &&
+                                  !ModifierDown(VK_CONTROL) && !ModifierDown(VK_MENU) &&
+                                  !ModifierDown(VK_LWIN) && !ModifierDown(VK_RWIN);
 
-        if (!_sessionAndroidMode)
+        if (_sessionMode == SessionInputMode.Standard)
             return CallNextHookEx(_hook, nCode, wParam, lParam);
 
+        if (_sessionMode == SessionInputMode.Unknown)
+        {
+            if (HandleUnknownInput(data, down, up, sourceShift, noShortcutModifier))
+                return new IntPtr(1);
+            return CallNextHookEx(_hook, nCode, wParam, lParam);
+        }
+
+        if (ProcessAndroidEvent(data, down, up, sourceShift, noShortcutModifier))
+            return new IntPtr(1);
+        return CallNextHookEx(_hook, nCode, wParam, lParam);
+    }
+
+    private bool ProcessAndroidEvent(
+        KBDLLHOOKSTRUCT data,
+        bool down,
+        bool up,
+        bool sourceShift,
+        bool noShortcutModifier)
+    {
         if (up && _composeConsumedScan == data.scanCode)
         {
             _composeConsumedScan = 0;
-            return new IntPtr(1);
+            return true;
         }
+
+        char sourceCharacter;
+        bool hasSourceCharacter = TryGetUsSourceCharacter(
+            data.vkCode, data.scanCode, sourceShift, out sourceCharacter);
 
         if (down && noShortcutModifier && hasSourceCharacter)
         {
@@ -413,13 +606,13 @@ internal sealed class FixContext : ApplicationContext
                 {
                     SendUnicode('`');
                     _composeConsumedScan = data.scanCode;
-                    return new IntPtr(1);
+                    return true;
                 }
 
                 if (TrySendCompose(sourceCharacter))
                 {
                     _composeConsumedScan = data.scanCode;
-                    return new IntPtr(1);
+                    return true;
                 }
 
                 SendUnicode('`');
@@ -429,7 +622,7 @@ internal sealed class FixContext : ApplicationContext
                 _composeArmed = true;
                 _composeArmedAt = DateTime.Now;
                 _composeConsumedScan = data.scanCode;
-                return new IntPtr(1);
+                return true;
             }
         }
 
@@ -437,7 +630,7 @@ internal sealed class FixContext : ApplicationContext
         if (mappedScan != data.scanCode)
         {
             SendScan(mappedScan, up);
-            return new IntPtr(1);
+            return true;
         }
 
         if (noShortcutModifier)
@@ -447,11 +640,11 @@ internal sealed class FixContext : ApplicationContext
             {
                 if (down)
                     SendUnicode(printable);
-                return new IntPtr(1);
+                return true;
             }
         }
 
-        return CallNextHookEx(_hook, nCode, wParam, lParam);
+        return false;
     }
 
     private static uint MapAzertyLetter(uint scan)
@@ -610,6 +803,46 @@ internal sealed class FixContext : ApplicationContext
         var up = down;
         up.U.ki.dwFlags = 0x0004 | KEYEVENTF_KEYUP;
         SendInput(2, new INPUT[] { down, up }, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    private enum SessionInputMode
+    {
+        Unknown,
+        Android,
+        Standard
+    }
+
+    private sealed class PendingKey
+    {
+        public readonly KBDLLHOOKSTRUCT Data;
+        public readonly bool SourceShift;
+        public readonly bool NoShortcutModifier;
+        private readonly long _startedAt;
+
+        public PendingKey(
+            KBDLLHOOKSTRUCT data,
+            bool sourceShift,
+            bool noShortcutModifier)
+        {
+            Data = data;
+            SourceShift = sourceShift;
+            NoShortcutModifier = noShortcutModifier;
+            _startedAt = Stopwatch.GetTimestamp();
+        }
+
+        public bool Matches(KBDLLHOOKSTRUCT data)
+        {
+            return data.scanCode == Data.scanCode && data.vkCode == Data.vkCode;
+        }
+
+        public double ElapsedMilliseconds
+        {
+            get
+            {
+                long elapsed = Stopwatch.GetTimestamp() - _startedAt;
+                return elapsed * 1000.0 / Stopwatch.Frequency;
+            }
+        }
     }
 
     private sealed class ParsecConnectionSnapshot
