@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ASSETS = REPO_ROOT / "assets"
 BASE_PATH = ASSETS / "parsec-official-256.png"
 BADGE_PATH = ASSETS / "twemoji-check-button-72.png"
-MASTER_PATH = ASSETS / "icon-master.png"
+MASTER_PATH = ASSETS / "parsec-android-azerty-fix-icon.png"
 ICO_PATH = ASSETS / "ParsecAzertyFix.ico"
 
 BASE_SIZE = (256, 256)

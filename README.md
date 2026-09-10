@@ -2,7 +2,7 @@
 
 [Lire en français](README.fr.md)
 
-<img src="assets/icon-master.png" alt="Parsec Android AZERTY Fix icon" width="128">
+<img src="assets/parsec-android-azerty-fix-icon.png" alt="Parsec Android AZERTY Fix icon" width="128">
 
 An open-source Windows workaround for **Parsec Android keyboard layout problems** when an **AZERTY keyboard is recognized as QWERTY** on the remote Windows host.
 

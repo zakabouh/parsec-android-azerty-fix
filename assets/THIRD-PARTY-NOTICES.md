@@ -21,8 +21,9 @@ Twemoji graphics are licensed under the
 [Creative Commons Attribution 4.0 International license](https://creativecommons.org/licenses/by/4.0/).
 Copyright Twitter, Inc. and other contributors; maintained by the Twemoji
 community. The source badge is included unchanged. It is positioned over the
-Parsec PNG in `icon-master.png`; the resulting composite is resized only when
-creating the multiple resolutions stored in `ParsecAzertyFix.ico`.
+Parsec PNG in `parsec-android-azerty-fix-icon.png`; the resulting composite is
+resized only when creating the multiple resolutions stored in
+`ParsecAzertyFix.ico`.
 
 The MIT license in the repository root applies to the program source, not to
 the third-party images described above.

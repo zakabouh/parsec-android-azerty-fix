@@ -2,7 +2,7 @@
 
 [Read in English](README.md)
 
-<img src="assets/icon-master.png" alt="Icône Parsec Android AZERTY Fix" width="128">
+<img src="assets/parsec-android-azerty-fix-icon.png" alt="Icône Parsec Android AZERTY Fix" width="128">
 
 Correcteur Windows open source pour le problème de **clavier Parsec Android reconnu en QWERTY alors qu'il est en AZERTY** sur le PC distant.
 
