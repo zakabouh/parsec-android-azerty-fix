@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -9,10 +10,11 @@ using Microsoft.Win32;
 internal static class Installer
 {
     private const string ProductName = "Parsec Android AZERTY Fix";
-    private const string Version = "1.3.0";
+    private const string Version = "1.4.0";
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\ParsecAzertyFix";
     private const string RunValueName = "ParsecAzertyFix";
+    private const string StartupShortcutName = "Parsec Android AZERTY Fix.lnk";
     private const string PayloadResource = "ParsecAzertyFix.Payload.exe";
 
     [STAThread]
@@ -75,6 +77,7 @@ internal static class Installer
 
         using (RegistryKey run = Registry.CurrentUser.CreateSubKey(RunKeyPath))
             run.SetValue(RunValueName, Quote(executable), RegistryValueKind.String);
+        CreateStartupShortcut(executable);
 
         using (RegistryKey entry = Registry.CurrentUser.CreateSubKey(UninstallKeyPath))
         {
@@ -121,6 +124,7 @@ internal static class Installer
         }
         Registry.CurrentUser.DeleteSubKeyTree(UninstallKeyPath, false);
 
+        DeleteIfPresent(GetStartupShortcutPath());
         DeleteIfPresent(executable);
         DeleteIfPresent(Path.Combine(installDirectory, "status.log"));
         DeleteIfPresent(Path.Combine(installDirectory, "android-clients.txt"));
@@ -179,6 +183,56 @@ internal static class Installer
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ParsecAzertyFix");
+    }
+
+    private static string GetStartupShortcutPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+            StartupShortcutName);
+    }
+
+    private static void CreateStartupShortcut(string executable)
+    {
+        object shell = null;
+        object shortcut = null;
+        try
+        {
+            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null)
+                throw new InvalidOperationException("Windows Script Host est indisponible.");
+
+            shell = Activator.CreateInstance(shellType);
+            shortcut = shellType.InvokeMember(
+                "CreateShortcut",
+                BindingFlags.InvokeMethod,
+                null,
+                shell,
+                new object[] { GetStartupShortcutPath() });
+
+            Type shortcutType = shortcut.GetType();
+            shortcutType.InvokeMember(
+                "TargetPath", BindingFlags.SetProperty, null, shortcut,
+                new object[] { executable });
+            shortcutType.InvokeMember(
+                "WorkingDirectory", BindingFlags.SetProperty, null, shortcut,
+                new object[] { Path.GetDirectoryName(executable) });
+            shortcutType.InvokeMember(
+                "Description", BindingFlags.SetProperty, null, shortcut,
+                new object[] { ProductName });
+            shortcutType.InvokeMember(
+                "IconLocation", BindingFlags.SetProperty, null, shortcut,
+                new object[] { executable + ",0" });
+            shortcutType.InvokeMember(
+                "Save", BindingFlags.InvokeMethod, null, shortcut, null);
+        }
+        finally
+        {
+            if (shortcut != null && Marshal.IsComObject(shortcut))
+                Marshal.FinalReleaseComObject(shortcut);
+            if (shell != null && Marshal.IsComObject(shell))
+                Marshal.FinalReleaseComObject(shell);
+        }
     }
 
     private static bool HasArgument(string[] args, string expected)

@@ -65,6 +65,7 @@ internal sealed class FixContext : ApplicationContext
     private readonly string _parsecLog;
     private readonly string _statusLog;
     private readonly NotifyIcon _tray;
+    private readonly Icon _applicationIcon;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _retryDetectionItem;
     private readonly ToolStripMenuItem _forceAndroidItem;
@@ -82,6 +83,8 @@ internal sealed class FixContext : ApplicationContext
     private uint _timedOutScan;
     private uint _timedOutVirtualKey;
     private int _slowTapEvidence;
+    private bool _mixedAndroidDetected;
+    private bool _mixedStandardDetected;
     private int _shiftBurstCount;
     private long _shiftBurstStartedAt;
     private bool _androidShiftSignatureArmed;
@@ -132,7 +135,8 @@ internal sealed class FixContext : ApplicationContext
         menu.Items.Add(exitItem);
 
         _tray = new NotifyIcon();
-        _tray.Icon = SystemIcons.Application;
+        _applicationIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        _tray.Icon = _applicationIcon ?? SystemIcons.Application;
         _tray.ContextMenuStrip = menu;
         _tray.Visible = true;
 
@@ -177,6 +181,8 @@ internal sealed class FixContext : ApplicationContext
         }
         _tray.Visible = false;
         _tray.Dispose();
+        if (_applicationIcon != null)
+            _applicationIcon.Dispose();
         WriteStatus("Correcteur arrêté");
         base.ExitThreadCore();
     }
@@ -196,9 +202,12 @@ internal sealed class FixContext : ApplicationContext
             _connectionSignature = snapshot.Signature;
             _parsecConnected = snapshot.ClientPorts.Count > 0;
             ResetTransientInputState();
-            _sessionMode = snapshot.ClientPorts.Count == 1
-                ? SessionInputMode.Unknown
-                : SessionInputMode.Standard;
+            if (snapshot.ClientPorts.Count == 1)
+                _sessionMode = SessionInputMode.Unknown;
+            else if (snapshot.ClientPorts.Count > 1)
+                _sessionMode = SessionInputMode.Mixed;
+            else
+                _sessionMode = SessionInputMode.Standard;
             WriteStatus(DescribeConnection(snapshot));
         }
         UpdateTray();
@@ -259,7 +268,7 @@ internal sealed class FixContext : ApplicationContext
         if (snapshot.ClientPorts.Count == 0)
             return "Session Parsec terminée — retour automatique au mode standard";
         if (snapshot.ClientPorts.Count > 1)
-            return "Plusieurs clients Parsec — mode standard par sécurité";
+            return "Plusieurs clients Parsec — détection séparée pour chaque appui";
         return "Nouvelle session Parsec — détection automatique en attente";
     }
 
@@ -300,6 +309,10 @@ internal sealed class FixContext : ApplicationContext
             state = "Android détecté — correction active";
         else if (_sessionMode == SessionInputMode.Unknown)
             state = "détection automatique…";
+        else if (_sessionMode == SessionInputMode.Mixed)
+            state = _mixedAndroidDetected && _mixedStandardDetected
+                ? "PC + Android reconnus"
+                : "PC + Android — détection par appui";
         else
             state = "connexion standard — aucune correction";
 
@@ -317,6 +330,8 @@ internal sealed class FixContext : ApplicationContext
         _timedOutScan = 0;
         _timedOutVirtualKey = 0;
         _slowTapEvidence = 0;
+        _mixedAndroidDetected = false;
+        _mixedStandardDetected = false;
         _shiftBurstCount = 0;
         _shiftBurstStartedAt = 0;
         _androidShiftSignatureArmed = false;
@@ -424,10 +439,90 @@ internal sealed class FixContext : ApplicationContext
         return false;
     }
 
+    private bool HandleMixedInput(
+        KBDLLHOOKSTRUCT data,
+        bool down,
+        bool up,
+        bool sourceShift,
+        bool noShortcutModifier)
+    {
+        if (_pendingKey != null)
+        {
+            if (up && _pendingKey.Matches(data))
+            {
+                PendingKey pending = _pendingKey;
+                _pendingKey = null;
+                _classificationTimer.Stop();
+
+                if (pending.ElapsedMilliseconds <= FastTapMaximumMilliseconds)
+                {
+                    if (!_mixedAndroidDetected)
+                    {
+                        _mixedAndroidDetected = true;
+                        WriteStatus("Entrées Android rapides reconnues pendant la coexistence");
+                        UpdateTray();
+                    }
+
+                    _androidShiftSignatureArmed = false;
+                    _shiftBurstCount = 0;
+                    ReplayAndroidTap(pending, data);
+                    return true;
+                }
+
+                SendOriginalKeyboard(pending.Data, false);
+                NoteMixedStandardInput();
+                return false;
+            }
+
+            if (down && noShortcutModifier && IsDetectionCandidate(data))
+            {
+                PendingKey pending = _pendingKey;
+                _pendingKey = null;
+                _classificationTimer.Stop();
+                SendOriginalKeyboard(pending.Data, false);
+                NoteMixedStandardInput();
+                return false;
+            }
+
+            return false;
+        }
+
+        if (_timedOutScan != 0)
+        {
+            if (up && data.scanCode == _timedOutScan && data.vkCode == _timedOutVirtualKey)
+            {
+                _timedOutScan = 0;
+                _timedOutVirtualKey = 0;
+            }
+            return false;
+        }
+
+        if (down && noShortcutModifier && IsDetectionCandidate(data))
+        {
+            _pendingKey = new PendingKey(data, sourceShift, noShortcutModifier);
+            _classificationTimer.Stop();
+            _classificationTimer.Start();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void NoteMixedStandardInput()
+    {
+        if (_mixedStandardDetected)
+            return;
+
+        _mixedStandardDetected = true;
+        WriteStatus("Entrées du clavier physique reconnues pendant la coexistence");
+        UpdateTray();
+    }
+
     private void ClassificationTimerElapsed()
     {
         _classificationTimer.Stop();
-        if (_sessionMode != SessionInputMode.Unknown || _pendingKey == null)
+        if ((_sessionMode != SessionInputMode.Unknown &&
+             _sessionMode != SessionInputMode.Mixed) || _pendingKey == null)
             return;
 
         PendingKey pending = _pendingKey;
@@ -435,6 +530,8 @@ internal sealed class FixContext : ApplicationContext
         _timedOutScan = pending.Data.scanCode;
         _timedOutVirtualKey = pending.Data.vkCode;
         SendOriginalKeyboard(pending.Data, false);
+        if (_sessionMode == SessionInputMode.Mixed)
+            NoteMixedStandardInput();
     }
 
     private void RegisterSlowTap()
@@ -542,7 +639,8 @@ internal sealed class FixContext : ApplicationContext
 
         if (data.vkCode == 0x10 || data.vkCode == 0xA0 || data.vkCode == 0xA1)
         {
-            if (down && _sessionMode == SessionInputMode.Unknown)
+            if (down && (_sessionMode == SessionInputMode.Unknown ||
+                         _sessionMode == SessionInputMode.Mixed))
                 ObserveUnknownShiftDown();
             _remoteShift = down;
             return CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -571,6 +669,13 @@ internal sealed class FixContext : ApplicationContext
         if (_sessionMode == SessionInputMode.Unknown)
         {
             if (HandleUnknownInput(data, down, up, sourceShift, noShortcutModifier))
+                return new IntPtr(1);
+            return CallNextHookEx(_hook, nCode, wParam, lParam);
+        }
+
+        if (_sessionMode == SessionInputMode.Mixed)
+        {
+            if (HandleMixedInput(data, down, up, sourceShift, noShortcutModifier))
                 return new IntPtr(1);
             return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
@@ -809,6 +914,7 @@ internal sealed class FixContext : ApplicationContext
     {
         Unknown,
         Android,
+        Mixed,
         Standard
     }
 

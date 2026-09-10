@@ -2,6 +2,8 @@
 
 [Read in English](README.md)
 
+<img src="assets/icon-master.png" alt="Icône Parsec Android AZERTY Fix" width="128">
+
 Correcteur Windows open source pour le problème de **clavier Parsec Android reconnu en QWERTY alors qu'il est en AZERTY** sur le PC distant.
 
 Il corrige les touches `A/Q`, `Z/W` et `M` inversées, les chiffres qui produisent des symboles, la ponctuation et plusieurs caractères spéciaux. Le programme distingue automatiquement les appuis quasi instantanés du clavier tactile Parsec Android des durées normales d'un clavier physique. Il n'y a ni apprentissage d'appareil ni raccourci clavier, et les connexions Parsec provenant d'un autre ordinateur restent inchangées.
@@ -45,7 +47,7 @@ Certains claviers Android transmettent Retour arrière de façon irrégulière d
 - Il ne peut pas deviner une touche si Android et Parsec ne transmettent aucun événement ; les raccourcis de composition servent de solution de secours.
 - Les problèmes de touche Entrée, souris/clic droit et manette ne font pas partie de ce correcteur de disposition clavier.
 - Le doublement des lettres causé par certaines configurations SwiftKey est un problème Android distinct.
-- Si Android et un autre ordinateur contrôlent simultanément l'hôte, le programme reste en mode standard. Parsec n'indique pas quel client a produit chaque événement clavier.
+- Si Android et un autre ordinateur contrôlent simultanément l'hôte, les touches imprimables du clavier physique peuvent être retardées d'au plus 35 ms afin de les distinguer des taps Android. Les raccourcis Ctrl, Alt et Windows ne sont jamais retardés.
 - Une macro ou un autre clavier virtuel distant produisant des appuis de moins de 25 ms peut ressembler au clavier tactile Android. Le menu de notification permet de relancer la détection ou de forcer Android pour la session actuelle.
 - Un clavier physique Bluetooth ou USB relié à Android produit des durées humaines. S'il subit le même problème de disposition, choisissez **Forcer Android pour cette session** dans le menu de notification.
 
@@ -57,6 +59,7 @@ Certains claviers Android transmettent Retour arrière de façon irrégulière d
 - Raccourcis de secours facultatifs pour Retour arrière et Supprimer.
 - Détection automatique du clavier tactile Android au début de chaque session Parsec ne comportant qu'un client.
 - Deux pressions de durée physique, ou des touches qui se chevauchent, sont nécessaires pour classer un ordinateur standard ; un tap Android caractéristique ou sa séquence Maj synthétique suffit à activer la correction.
+- Coexistence d'Android et d'un autre ordinateur grâce à une classification séparée de chaque touche imprimable.
 - Aucun changement du vrai clavier Windows ni de la souris locale.
 
 Parsec présente officiellement son application Android comme expérimentale et indique que les entrées clavier et souris peuvent parfois mal fonctionner. Voir [Installer l'application Parsec sur Android](https://support.parsec.app/hc/en-us/articles/32381582866452-Install-Parsec-App-on-Android).
@@ -73,7 +76,7 @@ L'installation ne demande aucun droit administrateur. Elle est effectuée pour l
 %LOCALAPPDATA%\ParsecAzertyFix\ParsecAzertyFix.exe
 ```
 
-Le programme est ajouté à `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` pour démarrer automatiquement à chaque ouverture de session Windows.
+Pour fiabiliser le démarrage automatique, l'installateur ajoute à la fois une entrée dans `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` et un raccourci dans le dossier Démarrage de l'utilisateur courant. La protection mono-instance ignore sans risque un lancement en double.
 
 > L'exécutable n'est pas signé numériquement. Windows SmartScreen peut donc afficher un avertissement « Éditeur inconnu ». Le code source complet et le script de construction reproductible sont disponibles dans ce dépôt.
 
@@ -86,6 +89,8 @@ Au début de chaque session ne comportant qu'un client :
 - la déconnexion efface la décision afin d'analyser indépendamment la session suivante.
 
 Pendant cette décision, le programme retarde d'au plus 35 ms les une ou deux premières touches imprimables. Les raccourcis avec Ctrl, Alt ou la touche Windows ne sont jamais retardés pour la détection. Aucun raccourci clavier ni combinaison dépendant de la disposition n'est nécessaire. Le menu permet de relancer la détection, de forcer Android pour la session actuelle, de désactiver complètement le correcteur ou de quitter le programme.
+
+Lorsque plusieurs clients Parsec sont connectés, la même décision est effectuée pour chaque touche imprimable au lieu d'imposer une disposition à toute la session. Un tap Android rapide est remappé ; une touche physique encore enfoncée après 35 ms est transmise sans modification. Android et un autre ordinateur peuvent ainsi saisir du texte pendant la même session hôte.
 
 La classification repose sur le comportement des événements et non sur le port réseau. Le port client par défaut de Parsec est pseudo-aléatoire d'après sa documentation : un numéro de port ne peut donc pas identifier Android de façon fiable.
 
@@ -141,6 +146,8 @@ Le dossier `artifacts\` contiendra :
 - Ne demande aucun droit administrateur.
 
 Ce projet est un contournement communautaire non officiel, sans affiliation avec Parsec.
+
+Le nom et le logo Parsec appartiennent à leur propriétaire respectif. L'icône modifiée sert uniquement à indiquer la compatibilité avec Parsec et comporte un badge de réparation afin de distinguer clairement cet utilitaire non officiel de l'application officielle.
 
 ## Licence
 

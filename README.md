@@ -2,6 +2,8 @@
 
 [Lire en français](README.fr.md)
 
+<img src="assets/icon-master.png" alt="Parsec Android AZERTY Fix icon" width="128">
+
 An open-source Windows workaround for **Parsec Android keyboard layout problems** when an **AZERTY keyboard is recognized as QWERTY** on the remote Windows host.
 
 It fixes swapped `A/Q`, `Z/W` and `M` keys, number-row and punctuation mapping, and provides fallbacks for special characters, Backspace and Delete. The helper automatically distinguishes the near-instant key taps produced by Parsec's Android soft keyboard from the normal key-hold timings of a physical keyboard. There is no device-learning step or keyboard shortcut, and normal Parsec connections from another computer stay unchanged.
@@ -44,7 +46,7 @@ Some Android keyboards send Backspace inconsistently through Parsec. The helper 
 - It cannot reconstruct a key for which Android and Parsec transmit absolutely no event; the compose shortcuts are the fallback for those characters.
 - Enter, mouse/right-click and controller problems are outside this keyboard-layout fix.
 - Double typing caused by some SwiftKey configurations is a separate Android keyboard issue.
-- If Android and another computer control the host simultaneously, the helper stays in standard mode. Parsec does not expose which client produced each individual keyboard event.
+- When Android and another computer control the host simultaneously, printable physical-key events may be delayed by up to 35 ms so the helper can distinguish them from Android taps. Ctrl, Alt and Windows shortcuts are never delayed.
 - A macro or another remote on-screen keyboard that emits sub-25 ms key taps can resemble the Android soft keyboard. The tray menu can restart detection or force Android mode for the current session.
 - A physical Bluetooth or USB keyboard attached to Android has human key-hold timings. If it suffers from the same layout problem, select **Force Android for this session** from the tray menu.
 
@@ -56,6 +58,7 @@ Some Android keyboards send Backspace inconsistently through Parsec. The helper 
 - Provides optional compose shortcuts for Backspace and Delete.
 - Detects Android soft-keyboard input automatically at the start of every single-client Parsec session.
 - Requires two physical-length key presses (or overlapping keys) before classifying a session as a standard computer, while one characteristic Android tap or synthetic-Shift pattern is enough to enable the fix.
+- Supports simultaneous Android and computer clients by classifying each printable key press separately.
 - Leaves the physical Windows keyboard and local mouse unchanged.
 
 Parsec officially describes its Android app as experimental and says mouse and keyboard input may work incorrectly in some cases. See [Install Parsec App on Android](https://support.parsec.app/hc/en-us/articles/32381582866452-Install-Parsec-App-on-Android).
@@ -72,7 +75,7 @@ No administrator rights are required. The application is installed for the curre
 %LOCALAPPDATA%\ParsecAzertyFix\ParsecAzertyFix.exe
 ```
 
-It is registered under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, so it starts automatically at every Windows sign-in.
+For reliable automatic startup, the installer registers both a `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry and a shortcut in the current user's Startup folder. The single-instance guard safely ignores a duplicate launch.
 
 > The executable is not code-signed. Windows SmartScreen may therefore display an “Unknown publisher” warning. The complete source code and reproducible build script are available in this repository.
 
@@ -85,6 +88,8 @@ At the start of each session with one connected client:
 - disconnecting resets the decision, so the next session is detected independently.
 
 The helper briefly delays the first one or two printable key-down events by at most 35 ms while deciding. Shortcuts using Ctrl, Alt or the Windows key are never delayed for detection. No keyboard shortcut or layout-dependent key combination is required. The tray menu can restart detection, force Android mode for the current session, disable the helper globally or exit the program.
+
+If several Parsec clients are connected, the same decision is made for every printable press instead of choosing one layout for the whole session. A fast Android tap is remapped; a physical key still held after 35 ms is forwarded unchanged. This permits Android and another computer to type during the same host session.
 
 The classifier is based on input behavior rather than network ports. Parsec's documented default client port is pseudorandom, so a port number cannot reliably identify Android.
 
@@ -140,6 +145,8 @@ The `artifacts\` directory will contain:
 - Does not require administrator privileges.
 
 This is an unofficial community workaround and is not affiliated with or endorsed by Parsec.
+
+The Parsec name and logo belong to their respective owner. The modified icon is used only to identify compatibility with Parsec and includes a repair badge to distinguish this unofficial utility from the official application.
 
 ## License
 

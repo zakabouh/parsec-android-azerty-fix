@@ -4,6 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $repoRoot 'artifacts'
+$icon = Join-Path $repoRoot 'assets\ParsecAzertyFix.ico'
 $framework64 = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $framework32 = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
 $compiler = if (Test-Path -LiteralPath $framework64) { $framework64 } else { $framework32 }
@@ -20,6 +21,7 @@ $setup = Join-Path $artifacts 'ParsecAzertyFix-INSTALLER.exe'
 
 & $compiler /nologo /target:winexe /platform:anycpu /optimize+ `
     /out:$app `
+    /win32icon:$icon `
     /reference:System.dll `
     /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll `
@@ -29,6 +31,7 @@ if ($LASTEXITCODE -ne 0) { throw "Application build failed with exit code $LASTE
 
 & $compiler /nologo /target:winexe /platform:anycpu /optimize+ `
     /out:$setup `
+    /win32icon:$icon `
     /reference:System.dll `
     /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll `
