@@ -147,7 +147,7 @@ Le dossier `artifacts\` contiendra :
 
 Ce projet est un contournement communautaire non officiel, sans affiliation avec Parsec.
 
-Le nom et le logo Parsec appartiennent à leur propriétaire respectif. L'icône modifiée sert uniquement à indiquer la compatibilité avec Parsec et comporte un badge de réparation afin de distinguer clairement cet utilitaire non officiel de l'application officielle.
+Le nom et le logo Parsec appartiennent à leur propriétaire respectif. L'icône modifiée sert uniquement à indiquer la compatibilité avec Parsec et comporte un badge de réparation afin de distinguer clairement cet utilitaire non officiel de l'application officielle. Les PNG existants utilisés et leurs licences sont détaillés dans les [mentions relatives aux images tierces](assets/THIRD-PARTY-NOTICES.md).
 
 ## Licence
 

@@ -146,7 +146,7 @@ The `artifacts\` directory will contain:
 
 This is an unofficial community workaround and is not affiliated with or endorsed by Parsec.
 
-The Parsec name and logo belong to their respective owner. The modified icon is used only to identify compatibility with Parsec and includes a repair badge to distinguish this unofficial utility from the official application.
+The Parsec name and logo belong to their respective owner. The modified icon is used only to identify compatibility with Parsec and includes a repair badge to distinguish this unofficial utility from the official application. The existing PNG sources and their licenses are documented in [Third-party image notices](assets/THIRD-PARTY-NOTICES.md).
 
 ## License
 
